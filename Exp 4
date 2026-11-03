@@ -1,0 +1,92 @@
+# A. Import libraries
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras import layers, Model
+from tensorflow.keras.datasets import mnist
+
+# B. Load and preprocess dataset
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+x_train = x_train.astype('float32').reshape(-1, 784) / 255.0
+x_test = x_test.astype('float32').reshape(-1, 784) / 255.0
+
+# Use only digit 0 for training
+x_normal = x_train[y_train == 0]
+y_true = (y_test != 0).astype(int)
+
+# C. Build Autoencoder
+encoder_input = layers.Input(shape=(784,))
+x = layers.Dense(128, activation='relu')(encoder_input)
+x = layers.Dense(64, activation='relu')(x)
+encoded = layers.Dense(32, activation='relu')(x)
+encoder = Model(encoder_input, encoded)
+
+decoder_input = layers.Input(shape=(32,))
+x = layers.Dense(64, activation='relu')(decoder_input)
+x = layers.Dense(128, activation='relu')(x)
+decoded = layers.Dense(784, activation='sigmoid')(x)
+decoder = Model(decoder_input, decoded)
+
+autoencoder_input = layers.Input(shape=(784,))
+output = decoder(encoder(autoencoder_input))
+autoencoder = Model(autoencoder_input, output)
+
+# D. Compile and train
+autoencoder.compile(optimizer='adam',
+                    loss='mse', metrics=['mae'])
+
+history = autoencoder.fit(
+    x_normal, x_normal,
+    epochs=10, batch_size=128,
+    validation_split=0.1
+)
+
+# E. Calculate reconstruction error
+reconstructed = autoencoder.predict(x_test, verbose=0)
+error = np.mean((x_test - reconstructed)**2, axis=1)
+
+normal_reconstructed = autoencoder.predict(x_normal, verbose=0)
+normal_error = np.mean((x_normal - normal_reconstructed)**2, axis=1)
+
+threshold = np.percentile(normal_error, 95)
+y_pred = (error > threshold).astype(int)
+
+# Evaluate anomaly detection
+accuracy = np.mean(y_pred == y_true)
+tp = np.sum((y_pred == 1) & (y_true == 1))
+fp = np.sum((y_pred == 1) & (y_true == 0))
+fn = np.sum((y_pred == 0) & (y_true == 1))
+
+precision = tp / (tp + fp + 1e-8)
+recall = tp / (tp + fn + 1e-8)
+
+print("Threshold:", threshold)
+print("Detection Accuracy:", accuracy * 100, "%")
+print("Precision:", precision)
+print("Recall:", recall)
+
+# F. Plot training loss
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.legend()
+plt.title("Autoencoder Loss")
+plt.show()
+
+# Display original and reconstructed images
+indices = np.concatenate([
+    np.where(y_true == 0)[0][:5],
+    np.where(y_true == 1)[0][:5]
+])
+
+plt.figure(figsize=(12, 5))
+for i, idx in enumerate(indices):
+    plt.subplot(2, 10, i+1)
+    plt.imshow(x_test[idx].reshape(28, 28), cmap='gray')
+    plt.axis('off')
+
+    plt.subplot(2, 10, i+11)
+    plt.imshow(reconstructed[idx].reshape(28, 28), cmap='gray')
+    plt.axis('off')
+
+plt.show()
