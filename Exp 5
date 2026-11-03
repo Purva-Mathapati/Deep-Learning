@@ -1,0 +1,112 @@
+# A. Import libraries
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras import layers, Sequential
+
+# B. Prepare data
+sentences = [
+    "the cat sits on the mat",
+    "the dog sits on the rug",
+    "the cat eats fish",
+    "the dog eats meat",
+    "a cat likes fish",
+    "a dog likes meat",
+    "the cat likes the mat",
+    "the dog likes the rug"
+]
+
+tokens = [s.lower().split() for s in sentences]
+vocab = sorted(set(w for s in tokens for w in s))
+
+word_to_id = {w: i+1 for i, w in enumerate(vocab)}
+id_to_word = {i: w for w, i in word_to_id.items()}
+
+vocab_size = len(vocab)
+print("Vocabulary:", vocab)
+print("Vocabulary size:", vocab_size)
+print("Word to ID:", word_to_id)
+
+# C. Generate context and target data
+contexts, targets = [], []
+window = 2
+max_len = 4
+
+for sentence in tokens:
+    ids = [word_to_id[w] for w in sentence]
+
+    for i, target in enumerate(ids):
+        context = ids[max(0, i-window):i] + ids[i+1:i+window+1]
+
+        if context:
+            contexts.append(context)
+            targets.append(target)
+
+# Padding with 0
+X = np.zeros((len(contexts), max_len), dtype=int)
+
+for i, c in enumerate(contexts):
+    X[i, :len(c)] = c
+
+y = np.array(targets)
+
+print("Training examples:", len(y))
+print("Context shape:", X.shape)
+print("Target shape:", y.shape)
+
+# D. Build and train CBOW model
+model = Sequential([
+    layers.Input(shape=(max_len,)),
+    layers.Embedding(vocab_size+1, 16, mask_zero=True),
+    layers.GlobalAveragePooling1D(),
+    layers.Dense(vocab_size+1, activation="softmax")
+])
+
+model.compile(optimizer="adam",
+              loss="sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+
+history = model.fit(X, y, epochs=150, batch_size=16, verbose=0)
+
+print("Training completed.")
+print("Final Accuracy:", history.history['accuracy'][-1] * 100, "%")
+
+# E. Predict target word
+def predict_target(words, top_k=5):
+    ids = [word_to_id[w.lower()] for w in words
+           if w.lower() in word_to_id][:max_len]
+
+    if not ids:
+        print("No known context words.")
+        return
+
+    padded = np.zeros((1, max_len), dtype=int)
+    padded[0, :len(ids)] = ids
+
+    prob = model.predict(padded, verbose=0)[0][1:]
+    best = np.argsort(prob)[::-1][:top_k]
+
+    print("Context words:", words)
+    print("Predicted target words:")
+
+    for i in best:
+        print(id_to_word[i+1], "Probability:", round(float(prob[i]), 4))
+
+predict_target(["cat", "on", "mat"])
+
+# F. Sample predictions
+print("\nSample training predictions:")
+
+for i in range(5):
+    pred = np.argmax(model.predict(X[i:i+1], verbose=0)[0][1:]) + 1
+    print("Context:", [id_to_word[w] for w in contexts[i]],
+          "| Actual:", id_to_word[y[i]],
+          "| Predicted:", id_to_word[pred])
+
+# G. Training loss graph
+plt.plot(history.history["loss"])
+plt.title("CBOW Training Loss")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.grid()
+plt.show()
