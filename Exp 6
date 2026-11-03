@@ -1,0 +1,100 @@
+# A. Import libraries
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras import layers, Model
+
+# B. Load CIFAR-10 dataset
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+
+y_train, y_test = y_train.flatten(), y_test.flatten()
+x_train, y_train = x_train[:10000], y_train[:10000]
+x_test, y_test = x_test[:2000], y_test[:2000]
+
+classes = ["airplane", "automobile", "bird", "cat", "deer",
+           "dog", "frog", "horse", "ship", "truck"]
+
+print("Training data:", x_train.shape)
+print("Testing data:", x_test.shape)
+
+# C. Load pre-trained MobileNetV2
+base_model = tf.keras.applications.MobileNetV2(
+    input_shape=(96, 96, 3),
+    include_top=False,
+    weights="imagenet"
+)
+
+base_model.trainable = False
+
+# D. Add custom classifier
+inputs = layers.Input(shape=(32, 32, 3))
+x = layers.RandomFlip("horizontal")(inputs)
+x = layers.Resizing(96, 96)(x)
+x = tf.keras.applications.mobilenet_v2.preprocess_input(x)
+x = base_model(x, training=False)
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dense(128, activation="relu")(x)
+x = layers.Dropout(0.3)(x)
+outputs = layers.Dense(10, activation="softmax")(x)
+
+model = Model(inputs, outputs)
+
+model.compile(optimizer="adam",
+              loss="sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+
+# E. Train custom classifier
+h1 = model.fit(x_train, y_train, epochs=5, batch_size=32,
+               validation_split=0.2)
+
+# F. Fine-tune upper layers
+base_model.trainable = True
+
+for layer in base_model.layers[:int(len(base_model.layers)*0.8)]:
+    layer.trainable = False
+
+for layer in base_model.layers:
+    if isinstance(layer, layers.BatchNormalization):
+        layer.trainable = False
+
+model.compile(optimizer=tf.keras.optimizers.Adam(0.00001),
+              loss="sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+
+h2 = model.fit(x_train, y_train, epochs=3, batch_size=32,
+               validation_split=0.2)
+
+# G. Evaluate model
+loss, accuracy = model.evaluate(x_test, y_test, verbose=0)
+print("Test Loss:", loss)
+print("Test Accuracy:", accuracy * 100, "%")
+
+# H. Display predictions
+predictions = np.argmax(model.predict(x_test[:10], verbose=0), axis=1)
+
+plt.figure(figsize=(12, 6))
+
+for i in range(10):
+    plt.subplot(2, 5, i+1)
+    plt.imshow(x_test[i])
+    color = "green" if predictions[i] == y_test[i] else "red"
+    plt.title(f"Pred: {classes[predictions[i]]}\nTrue: {classes[y_test[i]]}",
+              color=color, fontsize=8)
+    plt.axis("off")
+
+plt.tight_layout()
+plt.show()
+
+# I. Plot training and validation accuracy
+train_acc = h1.history["accuracy"] + h2.history["accuracy"]
+val_acc = h1.history["val_accuracy"] + h2.history["val_accuracy"]
+
+plt.plot(train_acc, marker="o", label="Training Accuracy")
+plt.plot(val_acc, marker="o", label="Validation Accuracy")
+plt.axvline(4.5, linestyle="--", label="Fine-tuning starts")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
+plt.title("Transfer Learning and Fine-Tuning")
+plt.legend()
+plt.grid()
+plt.show()
