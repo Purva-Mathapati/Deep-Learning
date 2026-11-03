@@ -1,0 +1,83 @@
+# A. Import libraries
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import numpy as np
+
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import cifar10
+
+# B. Load and preprocess dataset
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+
+x_train = x_train / 255.0
+x_test = x_test / 255.0
+
+y_train = tf.keras.utils.to_categorical(y_train, 10)
+y_test = tf.keras.utils.to_categorical(y_test, 10)
+
+classes = ['Airplane', 'Car', 'Bird', 'Cat', 'Deer',
+           'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
+
+# Display sample images
+plt.figure(figsize=(10, 4))
+for i in range(10):
+    plt.subplot(2, 5, i+1)
+    plt.imshow(x_train[i])
+    plt.title(classes[np.argmax(y_train[i])])
+    plt.axis('off')
+plt.show()
+
+# C. Build CNN model
+model = models.Sequential([
+    layers.Input(shape=(32, 32, 3)),
+    layers.Conv2D(32, 3, activation='relu', padding='same'),
+    layers.MaxPooling2D(2),
+    layers.Conv2D(64, 3, activation='relu', padding='same'),
+    layers.MaxPooling2D(2),
+    layers.Conv2D(128, 3, activation='relu', padding='same'),
+    layers.MaxPooling2D(2),
+    layers.Flatten(),
+    layers.Dense(128, activation='relu'),
+    layers.Dropout(0.5),
+    layers.Dense(10, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+# D. Train model
+history = model.fit(x_train, y_train, epochs=10,
+                    batch_size=64, validation_split=0.1)
+
+# E. Evaluate model
+loss, accuracy = model.evaluate(x_test, y_test)
+print("Test Accuracy:", accuracy * 100, "%")
+
+# Predict test images
+pred = model.predict(x_test[:10])
+plt.figure(figsize=(12, 5))
+
+for i in range(10):
+    plt.subplot(2, 5, i+1)
+    plt.imshow(x_test[i])
+    p = np.argmax(pred[i])
+    a = np.argmax(y_test[i])
+    plt.title(f"Pred: {classes[p]}\nActual: {classes[a]}",
+              color='green' if p == a else 'red')
+    plt.axis('off')
+
+plt.show()
+
+# F. Plot accuracy and loss
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.legend()
+plt.title('Accuracy')
+plt.show()
+
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.legend()
+plt.title('Loss')
+plt.show()
